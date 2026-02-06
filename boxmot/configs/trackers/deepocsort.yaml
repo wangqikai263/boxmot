@@ -1,11 +1,11 @@
 det_thresh:
   type: uniform
-  default: 0.5  # from the default parameters
+  default: 0.6  # from the default parameters
   range: [0.3, 0.6]
 
 max_age:
   type: randint
-  default: 30  # from the default parameters
+  default: 80  # from the default parameters
   range: [10, 61, 10]  # step size of 10, upper bound exclusive
 
 min_hits:
@@ -15,7 +15,7 @@ min_hits:
 
 iou_thresh:
   type: uniform
-  default: 0.3  # from the default parameters
+  default: 0.4  # from the default parameters
   range: [0.1, 0.4]
 
 delta_t:

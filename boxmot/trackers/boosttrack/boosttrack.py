@@ -14,6 +14,7 @@ from boxmot.trackers.boosttrack.assoc import (
     soft_biou_batch,
 )
 from boxmot.trackers.boosttrack.kalmanfilter import KalmanFilter
+from boxmot.utils import logger as LOGGER
 
 
 def convert_bbox_to_z(bbox):
@@ -123,73 +124,104 @@ class KalmanBoxTracker:
 
 class BoostTrack(BaseTracker):
     """
-    Initializes the BoostTrack tracker with various parameters.
+    Initialize the BoostTrack tracker with various parameters.
 
-    Args:
-        reid_weights: Path to the re-identification model weights.
-        device: Device to run the model on (e.g., 'cpu', 'cuda').
-        half: Whether to use half-precision for computations.
-        max_age: Maximum allowed frames without update.
-        min_hits: Minimum hits required to output a track.
-        det_thresh: Detection confidence threshold.
-        iou_threshold: IoU threshold for association.
-        use_ecc: Whether to use ECC for camera motion compensation.
-        min_box_area: Minimum box area for detections.
-        aspect_ratio_thresh: Aspect ratio threshold for detections.
-        cmc_method: Method for camera motion compensation.
-        lambda_iou: Weight for IoU-based association.
-        lambda_mhd: Weight for Mahalanobis distance-based association.
-        lambda_shape: Weight for shape-based association.
-        use_dlo_boost: Whether to use DLO boost.
-        use_duo_boost: Whether to use DUO boost.
-        dlo_boost_coef: Coefficient for DLO boost.
-        s_sim_corr: Whether to use shape similarity correction.
-        use_rich_s: Whether to use rich shape features.
-        use_sb: Whether to use soft-BIoU.
-        use_vt: Whether to use visual tracking.
-        with_reid: Whether to use re-identification.
-        per_class: If True, enables per-class tracking, where tracks are managed separately for each class.
+    Parameters:
+    - reid_weights (Path): Path to the re-identification model weights.
+    - device (torch.device): Device to run the model on (e.g., 'cpu', 'cuda').
+    - half (bool): Whether to use half-precision (fp16) for faster inference.
+    - det_thresh (float): Detection threshold for considering detections.
+    - max_age (int): Maximum age (in frames) of a track before it is considered lost.
+    - max_obs (int): Maximum number of historical observations stored for each track. Always greater than max_age by minimum 5.
+    - min_hits (int): Minimum number of detection hits before a track is considered confirmed.
+    - iou_threshold (float): IOU threshold for determining match between detection and tracks.
+    - per_class (bool): Enables class-separated tracking.
+    - nr_classes (int): Total number of object classes that the tracker will handle (for per_class=True).
+    - asso_func (str): Algorithm name used for data association between detections and tracks.
+    - is_obb (bool): Work with Oriented Bounding Boxes (OBB) instead of standard axis-aligned bounding boxes.
+
+    BoostTrack-specific parameters:
+    - use_ecc (bool): Whether to use ECC for camera motion compensation.
+    - min_box_area (int): Minimum box area for detections.
+    - aspect_ratio_thresh (float): Aspect ratio threshold for detections.
+    - cmc_method (str): Method for camera motion compensation.
+    - lambda_iou (float): Weight for IoU-based association.
+    - lambda_mhd (float): Weight for Mahalanobis distance-based association.
+    - lambda_shape (float): Weight for shape-based association.
+    - use_dlo_boost (bool): Whether to use DLO boost for confidence adjustment.
+    - use_duo_boost (bool): Whether to use DUO boost for confidence adjustment.
+    - dlo_boost_coef (float): Coefficient for DLO boost.
+    - s_sim_corr (bool): Whether to use shape similarity correction.
+    - use_rich_s (bool): Whether to use rich shape features.
+    - use_sb (bool): Whether to use soft-BIoU.
+    - use_vt (bool): Whether to use visual tracking.
+    - with_reid (bool): Whether to use re-identification.
+
+    Attributes:
+    - frame_count (int): Counter for the frames processed.
+    - active_tracks (list): List to hold active tracks.
+    - trackers (List[KalmanBoxTracker]): List of active Kalman filter trackers.
+    - cmc: Camera motion compensation object.
+    - reid_model: Re-identification model instance (if with_reid=True).
     """
 
     def __init__(
-        self,
-        reid_weights,
-        device,
-        half: bool,
-        max_age: int = 60,
-        min_hits: int = 3,
-        det_thresh: float = 0.6,
-        iou_threshold: float = 0.3,
-        use_ecc: bool = True,
-        min_box_area: int = 10,
-        aspect_ratio_thresh: bool = 1.6,
-        cmc_method: str = "ecc",
-        # BoostTrack parameters
-        lambda_iou: float = 0.5,
-        lambda_mhd: float = 0.25,
-        lambda_shape: float = 0.25,
-        use_dlo_boost: bool = True,
-        use_duo_boost: bool = True,
-        dlo_boost_coef: float = 0.65,
-        s_sim_corr: bool = False,
-        # BoostTrack++ parameters
-        use_rich_s: bool = False,
-        use_sb: bool = False,
-        use_vt: bool = False,
-        with_reid: bool = False,
-        per_class: bool = False,  # Enable per-class tracking if True
+            self,
+            reid_weights,
+            device,
+            half: bool,
+            # BaseTracker parameters
+            det_thresh: float = 0.6,
+            max_age: int = 60,
+            max_obs: int = 50,
+            min_hits: int = 3,
+            iou_threshold: float = 0.3,
+            per_class: bool = False,
+            nr_classes: int = 80,
+            asso_func: str = "iou",
+            is_obb: bool = False,
+            # BoostTrack-specific parameters
+            use_ecc: bool = True,
+            min_box_area: int = 10,
+            aspect_ratio_thresh: float = 1.6,
+            cmc_method: str = "ecc",
+            lambda_iou: float = 0.5,
+            lambda_mhd: float = 0.25,
+            lambda_shape: float = 0.25,
+            use_dlo_boost: bool = True,
+            use_duo_boost: bool = True,
+            dlo_boost_coef: float = 0.65,
+            s_sim_corr: bool = False,
+            use_rich_s: bool = False,
+            use_sb: bool = False,
+            use_vt: bool = False,
+            with_reid: bool = False,
+            **kwargs  # Additional BaseTracker parameters
     ):
-        super().__init__(per_class=per_class)
+
+        # Forward per_class and any additional parameters to BaseTracker
+        super().__init__(
+            det_thresh=det_thresh,
+            max_age=max_age,
+            max_obs=max_obs,
+            min_hits=min_hits,
+            iou_threshold=iou_threshold,
+            per_class=per_class,
+            nr_classes=nr_classes,
+            asso_func=asso_func,
+            is_obb=is_obb,
+            **kwargs
+        )
         self.active_tracks = []
         self.frame_count = 0
         self.trackers: List[KalmanBoxTracker] = []
 
         # Parameters for BoostTrack (these can be tuned as needed)
-        self.max_age = max_age            # maximum allowed frames without update
-        self.min_hits = min_hits          # minimum hits to output a track
-        self.det_thresh = det_thresh      # detection confidence threshold
-        self.iou_threshold = iou_threshold   # association IoU threshold
-        self.use_ecc = use_ecc            # use ECC for camera motion compensation
+        self.max_age = max_age  # maximum allowed frames without update
+        self.min_hits = min_hits  # minimum hits to output a track
+        self.det_thresh = det_thresh  # detection confidence threshold
+        self.iou_threshold = iou_threshold  # association IoU threshold
+        self.use_ecc = use_ecc  # use ECC for camera motion compensation
         self.min_box_area = min_box_area  # minimum box area for detections
         self.aspect_ratio_thresh = aspect_ratio_thresh  # aspect ratio threshold for detections
         self.cmc_method = cmc_method
@@ -217,6 +249,8 @@ class BoostTrack(BaseTracker):
             self.cmc = get_cmc_method(cmc_method)()
         else:
             self.cmc = None
+
+        LOGGER.success("Initialized BoostTrack")
 
     @BaseTracker.setup_decorator
     @BaseTracker.per_class_decorator
@@ -280,7 +314,8 @@ class BoostTrack(BaseTracker):
             if dets_embs.shape[0] == 0:
                 emb_cost = np.empty((0, tracker_embs.shape[0]))
             else:
-                emb_cost = dets_embs.reshape(dets_embs.shape[0], -1) @ tracker_embs.reshape((tracker_embs.shape[0], -1)).T
+                emb_cost = dets_embs.reshape(dets_embs.shape[0], -1) @ tracker_embs.reshape(
+                    (tracker_embs.shape[0], -1)).T
         else:
             emb_cost = None
 
@@ -322,12 +357,12 @@ class BoostTrack(BaseTracker):
         for trk in self.trackers:
             d = trk.get_state()[0]
             if (trk.time_since_update < 1) and (
-                trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits
+                    trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits
             ):
                 # Format: [x1, y1, x2, y2, id, confidence, cls, det_ind]
                 outputs.append(np.array([d[0], d[1], d[2], d[3], trk.id, trk.conf, trk.cls, trk.det_ind]))
                 self.active_tracks.append(trk)
-            
+
         self.trackers = [trk for trk in self.trackers if trk.time_since_update <= self.max_age]
 
         if len(outputs) == 0:
@@ -344,7 +379,7 @@ class BoostTrack(BaseTracker):
         area_filter = w_arr * h_arr > self.min_box_area
 
         return outputs[vertical_filter & area_filter]
-    
+
     def get_iou_matrix(self, detections: np.ndarray, buffered: bool = False) -> np.ndarray:
         trackers = np.zeros((len(self.trackers), 5))
         for t, trk in enumerate(trackers):
@@ -367,7 +402,6 @@ class BoostTrack(BaseTracker):
             sigma_inv[i] = np.reciprocal(np.diag(trk.kf.covariance[:n_dims, :n_dims]))
         return ((z.reshape((-1, 1, n_dims)) - x.reshape((1, -1, n_dims))) ** 2 *
                 sigma_inv.reshape((1, -1, n_dims))).sum(axis=2)
-
 
     def duo_confidence_boost(self, detections: np.ndarray) -> np.ndarray:
         if len(detections) == 0:
@@ -440,7 +474,7 @@ class BoostTrack(BaseTracker):
             max_s = S.max(1)
             alpha = 0.65
             detections[:, 4] = np.maximum(
-                detections[:, 4], alpha * detections[:, 4] + (1 - alpha) * max_s**1.5
+                detections[:, 4], alpha * detections[:, 4] + (1 - alpha) * max_s ** 1.5
             )
         if self.use_vt:
             threshold_s = 0.95
@@ -449,7 +483,7 @@ class BoostTrack(BaseTracker):
             # alpha = (threshold_s - threshold_e) / n_steps # todo alpha is not being used probably a bug
             tmp = (S > np.maximum(
                 threshold_s - np.array([trk.time_since_update - 1 for trk in self.trackers]),
-                                    threshold_e)).max(1)
+                threshold_e)).max(1)
             scores = detections[:, 4].copy()
             scores[tmp] = np.maximum(scores[tmp], self.det_thresh + 1e-5)
             detections[:, 4] = scores

@@ -30,7 +30,7 @@ asso_func:
 
 use_byte:
   type: choice
-  default: false  # from the default parameters
+  default: True  # from the default parameters
   options: [True, False]
 
 inertia:

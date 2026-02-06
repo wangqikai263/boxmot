@@ -1,0 +1,44 @@
+num_slots:
+  default: 40
+
+gallery_path:
+  default: ""  
+min_conf:
+  default: 0.1
+det_thresh:
+  default: 0.2
+
+face_gate_thresh:
+  default: 0.35
+asso_thresh:
+  default: 0.6
+cost_fusion_alpha:
+  default: 0.2
+cold_start_frames:
+  default: 10
+
+lost_to_absent:
+  default: 60
+
+face_ema:
+  default: 0.9
+require_embs:
+  default: true
+open_set_init:
+  default: false
+
+use_byte:
+  default: true
+byte_iou_thresh:
+  default: 0.5
+rescue_cost_thresh:
+  default: 3.5
+
+delta_t:
+  default: 3
+max_obs:
+  default: 50
+Q_xy_scaling:
+  default: 0.01
+Q_s_scaling:
+  default: 0.0001

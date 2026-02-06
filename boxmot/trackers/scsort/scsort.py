@@ -127,7 +127,7 @@ class KalmanBoxTracker(object):
 
 
 class ScSort(BaseTracker):
-    def __init__(self, per_class: bool = False, min_conf: float = 0.1, det_thresh: float = 0.2, max_age: int = 80,
+    def __init__(self, per_class: bool = False, min_conf: float = 0.1, det_thresh: float = 0.2, max_age: int = 30,
                  min_hits: int = 3, asso_threshold: float = 0.1, delta_t: int = 3,
                  use_byte: bool = True, Q_xy_scaling: float = 0.01, Q_s_scaling: float = 0.0001,
                  rescue_dist_thresh: float = 2.0, byte_iou_thresh: float = 0.5):

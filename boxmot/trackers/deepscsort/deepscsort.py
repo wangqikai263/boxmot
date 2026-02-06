@@ -182,7 +182,7 @@ class DeepScSort(BaseTracker):
             # 0.3 代表 IoU 占 30% 权重, Re-ID 占 70% 权重
             cost_fusion_alpha: float = 0.2,
             # --- END OF MODIFICATION 1 ---
-            rescue_dist_thresh: float = 3.0,
+            rescue_dist_thresh: float = 3.5,
             byte_iou_thresh: float = 0.5,
             delta_t: int = 3,
             use_byte: bool = True,

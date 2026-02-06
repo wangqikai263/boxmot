@@ -15,7 +15,7 @@ new_track_thresh:
 
 track_buffer:
   type: randint
-  default: 30  # from the default parameters
+  default: 80  # from the default parameters
   range: [20, 81]
 
 match_thresh:

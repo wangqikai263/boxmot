@@ -345,23 +345,10 @@ class KalmanFilterXYSR(object):
         return self._likelihood
 
     def project(self):
-        """
-        将状态分布投影到测量空间 (Projects state distribution to measurement space)。
-
-        这对于计算马氏距离至关重要。它返回预测的测量值（均值）
-        以及该预测的不确定性（协方差）。
-        """
-
-        # 测量函数 H 将高维状态 x 映射到低维的测量空间 z
-        # mean = H * x
+        """将状态分布投影到测量空间。"""
         mean = np.dot(self.H, self.x)
-
-        # 计算创新协方差 S = H * P * H.T + R
-        # S 代表了“预测的测量值”本身的不确定性，它融合了状态预测的不确定性(P)和测量噪声的不确定性(R)
         covariance = np.linalg.multi_dot((self.H, self.P, self.H.T)) + self.R
-
         return mean, covariance
-
 
 def batch_filter(
     x, P, zs, Fs, Qs, Hs, Rs, Bs=None, us=None, update_first=False, saver=None

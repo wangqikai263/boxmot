@@ -427,7 +427,7 @@ def init_pretrained_weights(model, key=""):
         return torch_home
 
     torch_home = _get_torch_home()
-    model_dir = os.path.join(torch_home, "checkpoints")
+    model_dir = os.path.join(torch_home, "weights")
     try:
         os.makedirs(model_dir)
     except OSError as e:

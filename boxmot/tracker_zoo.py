@@ -63,6 +63,8 @@ def create_tracker(
         "boosttrack": "boxmot.trackers.boosttrack.boosttrack.BoostTrack",
         "scsort": "boxmot.trackers.scsort.scsort.ScSort",
         "deepscsort": "boxmot.trackers.deepscsort.deepscsort.DeepScSort",
+        "class_crosstrack": "boxmot.trackers.Class_crosstrack.class_crosstrack.ClassCrossTrack",  # ✅ 新增
+
     }
 
     # Check if the tracker type exists in the mapping

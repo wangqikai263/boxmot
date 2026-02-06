@@ -1,0 +1,240 @@
+% !TEX program = xelatex
+% MCIPSO Overall Workflow (paper-ready, English in-figure; Chinese caption outside)
+% Two versions in ONE file:
+%   (A) Single-column: 0.95 column (~85 mm), >=7.5pt
+%   (B) Double-column full width: 180 mm, >=8.5pt
+%
+% Compile:
+%   xelatex mcipso_workflow.tex
+% Export 300 dpi PNG preview (requires poppler):
+%   pdftoppm -png -r 300 mcipso_workflow.pdf mcipso_workflow
+% (You will get mcipso_workflow-1.png, mcipso_workflow-2.png)
+
+\documentclass[tikz,border=6pt]{standalone}
+
+% --- Fonts (XeLaTeX) ---
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+
+% --- Math ---
+\usepackage{amsmath,amssymb}
+
+% --- TikZ ---
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit}
+
+% --- Lists inside nodes ---
+\usepackage{enumitem}
+
+% ========== Color palette (fixed as requested) ==========
+\definecolor{lightblue}{HTML}{E8F1FB}
+\definecolor{lightorange}{HTML}{FFF1E1}
+\definecolor{lightgreen}{HTML}{EAF6EE}
+\definecolor{lightgray}{HTML}{F2F2F2}
+\definecolor{darkgray}{HTML}{222222}
+\definecolor{mediumgray}{HTML}{555555}
+\definecolor{reddot}{HTML}{D1495B}
+
+% ========== Global styles ==========
+\tikzset{
+  >=Stealth,
+  flowarrow/.style={-Stealth, draw=darkgray, line width=1.1pt},
+  brancharrow/.style={-Stealth, draw=darkgray, dashed, line width=1.1pt},
+  frame/.style={draw=darkgray, dashed, line width=1.1pt, rounded corners=3pt, fill=white},
+  annot/.style={draw=darkgray, line width=0.6pt, rounded corners=3pt, fill=lightgray, text=mediumgray},
+  box/.style={
+    draw=darkgray, line width=1.0pt, rounded corners=3pt,
+    fill=lightblue, text=darkgray, align=left, inner sep=6pt
+  },
+  keybox/.style={box, fill=lightorange},       % ONLY for controller + exchange
+  branchbox/.style={box, fill=lightgreen},     % theory/experiments
+  legendbox/.style={draw=darkgray, line width=0.6pt, rounded corners=3pt, fill=lightgray, text=darkgray, align=left, inner sep=5pt}
+}
+
+% ========== A reusable figure macro ==========
+% #1: target width (mm) for the whole figure canvas (approx.)
+% #2: base font size (pt)
+\newcommand{\MCIPSOFigure}[2]{%
+\begin{tikzpicture}[
+  font=\fontsize{#2}{1.18#2}\selectfont,
+  node distance=7mm and 10mm
+]
+
+% ---- Tunable geometry (kept grid-like) ----
+\def\Winputs{38mm}
+\def\Winit{48mm}
+\def\Wloop{58mm}
+\def\Wevidence{70mm}
+\def\Woutputs{48mm}
+
+% ---- Inputs (two stacked, left) ----
+\node[box, text width=\Winputs] (in1) {%
+  \textbf{Problem Definition}\\
+  Target objective / constraints / bounds; unified computational budget (FEs or time)
+};
+\node[box, text width=\Winputs, below=8mm of in1] (in2) {%
+  \textbf{UAV Environment}\\
+  Public DEM (e.g., SRTM); take-off/landing points; no-fly zones; threat parameters; wind-field disturbances; three difficulty maps
+};
+
+% ---- Initialization (to the right, centered between inputs) ----
+\node[box, text width=\Winit, right=14mm of $(in1.east)!0.5!(in2.east)$] (init) {%
+  \textbf{Initialization}\\
+  Initialize dual populations: main swarm $S_M$ (exploitation-biased), aux swarm $S_A$ (exploration-biased); initialize position/velocity; initialize $pbest$ and $gbest$
+};
+
+% ---- Loop internal modules (vertical stack) ----
+\node[box, text width=\Wloop, right=14mm of init] (m1) {%
+  \textbf{Evaluation & Memory Update}\\
+  Compute fitness/constraints; update $pbest_i$ and $gbest$; record feasibility / violation status
+};
+\node[box, text width=\Wloop, below=7mm of m1] (m2) {%
+  \textbf{Diversity Observation $D_t$}\\
+  Compute $D_t\in[0,1]$ (e.g., dispersion / kernel similarity / velocity variance); optional smoothing $\tilde{D}_t$
+};
+\node[keybox, text width=\Wloop, below=7mm of m2] (m3) {%
+  \textbf{Closed-Loop Decision / Controller}\\
+  Compute $f(D_t)$ (S-shaped); map to $\omega_t, c_{1,t}, c_{2,t}$; compute exchange period $K_t$ ($D_t$ lower $\rightarrow$ more frequent exchange); optional tiny sine/cosine perturbation to avoid stagnation
+};
+
+% Annotation (top-right of controller)
+\node[annot, text width=40mm, above right=1mm and 1mm of m3.north east] (m3a) {%
+  \textbf{Principle:} high diversity $\rightarrow$ strengthen individual learning, slow aggregation; low diversity $\rightarrow$ strengthen swarm learning, speed up information exchange
+};
+
+% Parallel update (split into upper/lower, symmetric widths)
+\node[box, text width=27mm, below=8mm of m3, xshift=-16mm] (m4u) {%
+  \textbf{Main swarm $S_M$}\\
+  \textit{Exploitation}\\
+  Update with $\omega_t^{M}, c_{1,t}^{M}, c_{2,t}^{M}$; feasibility repair / boundary handling
+};
+\node[box, text width=27mm, below=0mm of m4u, xshift=34mm] (m4l) {%
+  \textbf{Aux swarm $S_A$}\\
+  \textit{Exploration}\\
+  Update with $\omega_t^{A}, c_{1,t}^{A}, c_{2,t}^{A}$; feasibility repair / boundary handling
+};
+
+\node[keybox, text width=\Wloop, below=9mm of $(m4u.south)!0.5!(m4l.south)$] (m5) {%
+  \textbf{Dual-Population Information Exchange}\\
+  If $t\bmod K_t=0$ or low diversity + stagnation trigger: inject $m$ individuals from aux to main (elite / high diversity contributors), replace worst in main; copy $x, v, pbest$
+};
+
+% small “stagnation” red dot icon (tiny, optional)
+\node[circle, fill=reddot, draw=reddot, minimum size=2.2mm, inner sep=0pt, right=2mm of m5.north east, xshift=-2mm, yshift=-2mm] (dot) {};
+\node[font=\fontsize{0.92#2}{1.1#2}\selectfont, text=mediumgray, anchor=west] at ($(dot.east)+(1.2mm,0)$) {stagnation trigger};
+
+% short side note near exchange
+\node[font=\fontsize{0.92#2}{1.1#2}\selectfont, text=mediumgray, anchor=west] (m5note)
+  at ($(m5.east)+(2mm,-7mm)$) {More frequent “blood exchange” in low-diversity phases.};
+
+\node[box, text width=\Wloop, below=7mm of m5] (m6) {%
+  \textbf{Logging & Output (for paper figures/tables)}\\
+  Record: best-value curve, $D_t$ curve, exchange events, feasibility / violation rate, runtime
+};
+
+% ---- Loop frame (dashed outer box) ----
+\node[frame, fit=(m1)(m2)(m3)(m3a)(m4u)(m4l)(m5)(m6), inner sep=7mm,
+      label={[font=\bfseries]north east:{for $t=1..T$ or until budget exhausted}}] (loop) {};
+
+% ---- Outputs (right of loop) ----
+\node[box, text width=\Woutputs, right=14mm of loop] (out) {%
+  \textbf{Outputs}\\
+  Optimal solution / 3D path; convergence curve; $D_t$ variation; exchange statistics; feasibility and time-delay metrics
+};
+
+% ---- Evidence chain (right side, green) ----
+\node[branchbox, text width=\Wevidence, right=14mm of out, yshift=14mm] (R1) {%
+  \textbf{Theoretical Framework (Verifiable, No Over-Promises)}\\[-1mm]
+  \begin{itemize}[leftmargin=*,itemsep=1.2mm,topsep=1mm]
+    \item \textbf{Boundedness:} velocity/position are bounded when parameters stay in safe ranges
+    \item \textbf{Expected contraction domain:} when $D_t<D_{th}$, enters late-stage contraction (weak-form recursion with $\rho_t<1$)
+    \item \textbf{Exchange effectiveness:} exchange during low-diversity phases yields positive gains (validated by improvement rate / diversity enhancement)
+  \end{itemize}
+};
+
+\node[branchbox, text width=\Wevidence, below=10mm of R1] (R2) {%
+  \textbf{Experiments & Statistics (Rigorous Comparison + Engineering Constraints)}\\[-1mm]
+  \begin{tikzpicture}[x=1mm,y=1mm]
+    \node[draw=darkgray, line width=0.6pt, rounded corners=2pt, fill=lightgreen,
+          text=darkgray, align=left, inner sep=3.5pt, text width=0.93\Wevidence] (b1) {%
+      \textbf{Benchmarking & Statistics}\\
+      Unified budget (FEs/time); 30--50 repeats; mean$\pm$std; Wilcoxon; Friedman+Holm + CD diagram; convergence curves + box plots; additional $D_t$ curves to show closed-loop switching
+    };
+    \node[draw=darkgray, line width=0.6pt, rounded corners=2pt, fill=lightgreen,
+          text=darkgray, align=left, inner sep=3.5pt, text width=0.93\Wevidence, below=3mm of b1] (b2) {%
+      \textbf{UAV 3D Scenarios}\\
+      Public DEM; three difficulty levels; single-objective weighting + multi-objective (Pareto, HV/IGD*); cross-paradigm baselines (A*/D Lite, RRT*+B-spline, CMA-ES, NSGA-II/III or MOEA/D, lightweight DRL reference)
+    };
+    \node[draw=darkgray, line width=0.6pt, rounded corners=2pt, fill=lightgreen,
+          text=darkgray, align=left, inner sep=3.5pt, text width=0.93\Wevidence, below=3mm of b2] (b3) {%
+      \textbf{Ablation & Sensitivity}\\
+      Remove three components (diversity observation / coordinated tuning / dynamic exchange); sensitivity ($\alpha,\beta,\gamma,K_{\min},K_{\max}$); tables + box plots + effect size to show “each part works”
+    };
+  \end{tikzpicture}
+};
+
+% ---- Legend (top-right) ----
+\node[legendbox, anchor=north east, text width=44mm] (leg)
+  at ($(R1.north east)+(0mm,14mm)$) {%
+  \textbf{Legend}\\
+  \tikz{\draw[flowarrow] (0,0) -- (6mm,0);} \ \ \textbf{Solid} = main workflow\\
+  \tikz{\draw[brancharrow] (0,0) -- (6mm,0);} \ \ \textbf{Dashed} = evidence branch\\
+  \tikz{\node[draw=darkgray, fill=lightorange, rounded corners=1.5pt, minimum width=4mm, minimum height=3mm]{};} \ \ \textbf{Orange} = key control\\
+  \tikz{\node[draw=darkgray, fill=lightgreen, rounded corners=1.5pt, minimum width=4mm, minimum height=3mm]{};} \ \ \textbf{Green} = theory/experiments
+};
+
+% ---- Main workflow arrows (mostly orthogonal) ----
+% Inputs -> init (merge)
+\coordinate (merge) at ($(in1.east)!0.5!(in2.east)+(8mm,0)$);
+\draw[flowarrow] (in1.east) -- (merge);
+\draw[flowarrow] (in2.east) -- (merge);
+\draw[flowarrow] (merge) -- (init.west);
+
+\draw[flowarrow] (init.east) -- (m1.west);
+\draw[flowarrow] (m1.south) -- (m2.north);
+\draw[flowarrow] (m2.south) -- (m3.north);
+
+% Controller -> split -> two branches
+\coordinate (split) at ($(m3.south)+(0,-4mm)$);
+\draw[flowarrow] (m3.south) -- (split);
+\draw[flowarrow] (split) -| (m4u.north);
+\draw[flowarrow] (split) -| (m4l.north);
+
+% Merge branches -> exchange
+\coordinate (merge2) at ($(m4u.south)!0.5!(m4l.south)+(0,-3mm)$);
+\draw[flowarrow] (m4u.south) -- (merge2);
+\draw[flowarrow] (m4l.south) -- (merge2);
+\draw[flowarrow] (merge2) -- (m5.north);
+
+\draw[flowarrow] (m5.south) -- (m6.north);
+
+% Loop-back (m6 -> m1), routed around right edge of loop
+\draw[flowarrow] (m6.east) -- ($(m6.east)+(10mm,0)$)
+  |- ($(m1.east)+(10mm,0)$) -- (m1.east);
+
+% Loop -> outputs
+\draw[flowarrow] (loop.east) -- (out.west);
+
+% Evidence branch arrows (dashed)
+\draw[brancharrow] (m3.east) -- ++(8mm,0) |- (R1.west);
+\draw[brancharrow] (m5.east) -- ++(8mm,0) |- (R2.west);
+
+\end{tikzpicture}%
+}
+
+\begin{document}
+
+% =========================
+% Version 1: Single-column (~85 mm), min readable >=7.5pt
+% =========================
+% (If you embed into a paper, put this inside a figure environment and set width to 0.95\columnwidth.)
+\MCIPSOFigure{85}{7.6}
+
+% =========================
+% Version 2: Double-column full width (~180 mm), min readable >=8.5pt
+% =========================
+\vspace{10mm}
+\MCIPSOFigure{180}{8.6}
+
+\end{document}

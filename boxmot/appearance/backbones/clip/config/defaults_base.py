@@ -152,7 +152,7 @@ _C.SOLVER.WARMUP_METHOD = "linear"
 _C.SOLVER.COSINE_MARGIN = 0.5
 _C.SOLVER.COSINE_SCALE = 30
 
-# epoch number of saving checkpoints
+# epoch number of saving weights
 _C.SOLVER.CHECKPOINT_PERIOD = 10
 # iteration of display training log
 _C.SOLVER.LOG_PERIOD = 100

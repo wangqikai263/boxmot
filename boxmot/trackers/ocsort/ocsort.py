@@ -215,7 +215,7 @@ class OcSort(BaseTracker):
         per_class: bool = False,
         min_conf: float = 0.1,
         det_thresh: float = 0.2,
-        max_age: int = 80,
+        max_age: int = 30,
         min_hits: int = 3,
         asso_threshold: float = 0.3,
         delta_t: int = 3,
