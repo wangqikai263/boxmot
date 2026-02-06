@@ -12,7 +12,8 @@ from boxmot.trackers.basetracker import BaseTracker
 from boxmot.utils.matching import iou_distance, linear_assignment
 
 # Helper functions (unchanged from ScSort)
-from boxmot.utils.ops import xyxy2xysr, xyxy2xywh
+from boxmot.utils.ops import xyxy2xysr
+
 
 def convert_x_to_bbox(x, score=None):
     # --- START OF FIX ---
@@ -205,48 +206,6 @@ class DeepScSort(BaseTracker):
 
         self.reid_model = ReidAutoBackend(weights=reid_weights, device=device, half=half).model
 
-    def _mahalanobis_cost_2d(self, tracks, detections):
-        """
-        Calculates a robust, 2D Mahalanobis distance that is uncertainty-aware.
-        It only considers the (x, y) center position, avoiding instability from scale and aspect ratio.
-        """
-        if len(tracks) == 0 or len(detections) == 0:
-            return np.empty((len(detections), len(tracks)))
-
-        # Get the (x, y) centers of all detections using the imported helper function
-        det_centers = xyxy2xywh(detections[:, :4])[:, :2]
-
-        cost_matrix = np.zeros((len(detections), len(tracks)))
-        for j, track in enumerate(tracks):
-            # Project the track's state into measurement space using the dependency we confirmed
-            mean, cov = track.kf.project()
-
-            # Extract only the (x, y) parts of the mean and covariance
-            mean_xy = mean[:2]
-            cov_xy = cov[:2, :2]
-
-            try:
-                # Invert the 2x2 covariance matrix
-                cov_inv_xy = np.linalg.inv(cov_xy)
-
-                # Calculate the difference between detection centers and the projected track center
-                delta_xy = det_centers - mean_xy.T
-
-                # Calculate the squared Mahalanobis distance in 2D
-                mahalanobis_dist_sq = np.sum(np.dot(delta_xy, cov_inv_xy) * delta_xy, axis=1)
-
-                # Normalize using the Chi-squared distribution 95% confidence threshold
-                # for 2 degrees of freedom (which is 5.991)
-                cost = mahalanobis_dist_sq / 5.991
-                # Apply gating: any distance beyond the 95% confidence is considered max cost
-                cost[cost > 1.0] = 1.0
-                cost_matrix[:, j] = cost
-
-            except np.linalg.LinAlgError:
-                # If the covariance is singular, it's a bad state, assign max cost
-                cost_matrix[:, j] = 1.0
-
-        return cost_matrix
     def _location_cost(self, tracks, detections):
         # ... 此方法无需修改 ...
         cost_matrix = np.ones((len(detections), len(tracks)))
@@ -297,25 +256,26 @@ class DeepScSort(BaseTracker):
         for t in reversed(to_del): self.active_tracks.pop(t)
         trks_embs = np.array([t.smooth_feature for t in active_trks_for_context if t.smooth_feature is not None])
 
-        # --- START OF DYNAMIC COST INTEGRATION ---
-        # STAGE 1 & 2: Fused Cost Association with Dynamic 2D Motion Cost
-
-        # 1. 使用全新的、更鲁棒的2D马氏距离作为动态运动代价
-        # 注意：这里传入的是 active_trks_for_context，它包含了正确的KalmanBoxTracker实例列表
-        motion_cost = self._mahalanobis_cost_2d(active_trks_for_context, dets_high)
-
-        # 2. 外观代价计算保持不变
+        # --- START OF MODIFICATION 2: 核心修改 ---
+        # STAGE 1 & 2: Fused Cost Association (使用融合代价进行关联)
+        iou_cost = iou_distance(dets_high[:, 0:5 + self.is_obb], trks)
         reid_cost = reid_distance(dets_embs, trks_embs)
 
-        # 3. 融合“动态运动代价”和“外观代价”
-        fused_cost = self.cost_fusion_alpha * motion_cost + (1 - self.cost_fusion_alpha) * reid_cost
+        # 融合运动代价(iou_cost)和外观代价(reid_cost)
+        # self.cost_fusion_alpha 是IoU的权重, (1 - self.cost_fusion_alpha) 是Re-ID的权重
+        fused_cost = self.cost_fusion_alpha * iou_cost + (1 - self.cost_fusion_alpha) * reid_cost
+
+        # (推荐) 添加一个"安全门控"，排除那些在物理上或外观上完全不可能的匹配
+        # 例如，如果IoU距离大于0.9 (即IoU < 0.1)，或者Re-ID距离非常大(>0.8)，我们仍然认为它们不应该匹配
+        safety_iou_gate = iou_cost > 0.9
+        safety_reid_gate = reid_cost > 0.8
+        fused_cost[safety_iou_gate | safety_reid_gate] = 1.0  # 设置一个较高的代价值(1.0)，有效阻止匹配
 
         cost_matrix = fused_cost
 
-        # 4. 使用匈牙利算法进行线性分配
-        # 注意：由于代价函数的改变，reid_asso_thresh 将需要重新调优
+        # 使用匈牙利算法进行线性分配。匹配阈值 reid_asso_thresh 可能需要根据融合后的代价分布进行微调
         matched, u_detection, u_track = linear_assignment(cost_matrix, thresh=self.reid_asso_thresh)
-        # --- END OF DYNAMIC COST INTEGRATION ---
+        # --- END OF MODIFICATION 2 ---
 
         for m in matched:
             self.active_tracks[m[1]].update(dets_high[m[0], :-2], dets_high[m[0], -2], dets_high[m[0], -1],
