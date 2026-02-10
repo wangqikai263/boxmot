@@ -12,7 +12,7 @@ from boxmot.trackers.hybridsort.hybridsort import HybridSort
 from boxmot.trackers.ocsort.ocsort import OcSort
 from boxmot.trackers.strongsort.strongsort import StrongSort
 from boxmot.trackers.deepscsort.deepscsort import DeepScSort
-from boxmot.trackers.Class_crosstrack import ClassCrossTrack
+from boxmot.trackers.class_crosstrack import ClassCrossTrack
 
 
 TRACKERS = [
